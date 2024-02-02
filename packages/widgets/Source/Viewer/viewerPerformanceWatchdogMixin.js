@@ -42,6 +42,7 @@ function viewerPerformanceWatchdogMixin(viewer, options) {
         return performanceWatchdog;
       },
     },
+    configurable: true,
   });
 }
 export default viewerPerformanceWatchdogMixin;

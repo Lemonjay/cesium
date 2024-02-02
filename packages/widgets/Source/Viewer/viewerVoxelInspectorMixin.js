@@ -28,6 +28,7 @@ function viewerVoxelInspectorMixin(viewer) {
       get: function () {
         return voxelInspector;
       },
+      configurable: true,
     },
   });
 }

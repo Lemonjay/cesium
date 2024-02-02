@@ -37,6 +37,7 @@ function viewerCesiumInspectorMixin(viewer) {
       get: function () {
         return cesiumInspector;
       },
+      configurable: true,
     },
   });
 }

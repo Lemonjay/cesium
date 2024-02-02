@@ -31,6 +31,7 @@ function viewerCesium3DTilesInspectorMixin(viewer) {
       get: function () {
         return cesium3DTilesInspector;
       },
+      configurable: true,
     },
   });
 }

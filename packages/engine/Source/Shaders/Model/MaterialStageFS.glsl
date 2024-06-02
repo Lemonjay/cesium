@@ -16,35 +16,123 @@ vec2 computeTextureTransform(vec2 texCoord, mat3 textureTransform)
     return vec2(textureTransform * vec3(texCoord, 1.0));
 }
 
+#ifdef HAS_NORMAL_TEXTURE
+vec2 getNormalTexCoords()
+{
+    vec2 texCoord = TEXCOORD_NORMAL;
+    #ifdef HAS_NORMAL_TEXTURE_TRANSFORM
+        texCoord = vec2(u_normalTextureTransform * vec3(texCoord, 1.0));
+    #endif
+    return texCoord;
+}
+#endif
+
+#if defined(HAS_NORMAL_TEXTURE) || defined(HAS_CLEARCOAT_NORMAL_TEXTURE)
+vec3 computeTangent(in vec3 position, in vec2 normalTexCoords)
+{
+    vec2 tex_dx = dFdx(normalTexCoords);
+    vec2 tex_dy = dFdy(normalTexCoords);
+    float determinant = tex_dx.x * tex_dy.y - tex_dy.x * tex_dx.y;
+    vec3 tangent = tex_dy.t * dFdx(position) - tex_dx.t * dFdy(position);
+    return tangent / determinant;
+}
+#endif
+
+#ifdef USE_ANISOTROPY
+struct NormalInfo {
+    vec3 tangent;
+    vec3 bitangent;
+    vec3 normal;
+    vec3 geometryNormal;
+};
+
+NormalInfo getNormalInfo(ProcessedAttributes attributes)
+{
+    vec3 geometryNormal = attributes.normalEC;
+    #ifdef HAS_NORMAL_TEXTURE
+        vec2 normalTexCoords = getNormalTexCoords();
+    #endif
+
+    #ifdef HAS_BITANGENTS
+        vec3 tangent = attributes.tangentEC;
+        vec3 bitangent = attributes.bitangentEC;
+    #else // Assume HAS_NORMAL_TEXTURE
+        vec3 tangent = computeTangent(attributes.positionEC, normalTexCoords);
+        tangent = normalize(tangent - geometryNormal * dot(geometryNormal, tangent));
+        vec3 bitangent = normalize(cross(geometryNormal, tangent));
+    #endif
+
+    #ifdef HAS_NORMAL_TEXTURE
+        mat3 tbn = mat3(tangent, bitangent, geometryNormal);
+        vec3 normalSample = texture(u_normalTexture, normalTexCoords).rgb;
+        vec3 normal = normalize(tbn * (2.0 * normalSample - 1.0));
+    #else
+        vec3 normal = geometryNormal;
+    #endif
+
+    #ifdef HAS_DOUBLE_SIDED_MATERIAL
+        if (czm_backFacing()) {
+            tangent *= -1.0;
+            bitangent *= -1.0;
+            normal *= -1.0;
+            geometryNormal *= -1.0;
+        }
+    #endif
+
+    NormalInfo normalInfo;
+    normalInfo.tangent = tangent;
+    normalInfo.bitangent = bitangent;
+    normalInfo.normal = normal;
+    normalInfo.geometryNormal = geometryNormal;
+
+    return normalInfo;
+}
+#endif
+
 #if defined(HAS_NORMAL_TEXTURE) && !defined(HAS_WIREFRAME)
 vec3 getNormalFromTexture(ProcessedAttributes attributes, vec3 geometryNormal)
 {
-    vec2 normalTexCoords = TEXCOORD_NORMAL;
-    #ifdef HAS_NORMAL_TEXTURE_TRANSFORM
-        normalTexCoords = computeTextureTransform(normalTexCoords, u_normalTextureTransform);
+    vec2 normalTexCoords = getNormalTexCoords();
+
+    // If HAS_BITANGENTS is set, then HAS_TANGENTS is also set
+    #ifdef HAS_BITANGENTS
+        vec3 t = attributes.tangentEC;
+        vec3 b = attributes.bitangentEC;
+    #else
+        vec3 t = computeTangent(attributes.positionEC, normalTexCoords);
+        t = normalize(t - geometryNormal * dot(geometryNormal, t));
+        vec3 b = normalize(cross(geometryNormal, t));
+    #endif
+
+    mat3 tbn = mat3(t, b, geometryNormal);
+    vec3 n = texture(u_normalTexture, normalTexCoords).rgb;
+    vec3 textureNormal = normalize(tbn * (2.0 * n - 1.0));
+
+    return textureNormal;
+}
+#endif
+
+#ifdef HAS_CLEARCOAT_NORMAL_TEXTURE
+vec3 getClearcoatNormalFromTexture(ProcessedAttributes attributes, vec3 geometryNormal)
+{
+    vec2 normalTexCoords = TEXCOORD_CLEARCOAT_NORMAL;
+    #ifdef HAS_CLEARCOAT_NORMAL_TEXTURE_TRANSFORM
+        normalTexCoords = vec2(u_clearcoatNormalTextureTransform * vec3(normalTexCoords, 1.0));
     #endif
 
     // If HAS_BITANGENTS is set, then HAS_TANGENTS is also set
     #ifdef HAS_BITANGENTS
         vec3 t = attributes.tangentEC;
         vec3 b = attributes.bitangentEC;
-        mat3 tbn = mat3(t, b, geometryNormal);
-        vec3 n = texture(u_normalTexture, normalTexCoords).rgb;
-        vec3 textureNormal = normalize(tbn * (2.0 * n - 1.0));
-    #elif (__VERSION__ == 300 || defined(GL_OES_standard_derivatives))
-        // If derivatives are available (not IE 10), compute tangents
-        vec3 positionEC = attributes.positionEC;
-        vec3 pos_dx = dFdx(positionEC);
-        vec3 pos_dy = dFdy(positionEC);
-        vec3 tex_dx = dFdx(vec3(normalTexCoords,0.0));
-        vec3 tex_dy = dFdy(vec3(normalTexCoords,0.0));
-        vec3 t = (tex_dy.t * pos_dx - tex_dx.t * pos_dy) / (tex_dx.s * tex_dy.t - tex_dy.s * tex_dx.t);
+    #else
+        vec3 t = computeTangent(attributes.positionEC, normalTexCoords);
         t = normalize(t - geometryNormal * dot(geometryNormal, t));
         vec3 b = normalize(cross(geometryNormal, t));
-        mat3 tbn = mat3(t, b, geometryNormal);
-        vec3 n = texture(u_normalTexture, normalTexCoords).rgb;
-        vec3 textureNormal = normalize(tbn * (2.0 * n - 1.0));
     #endif
+
+    mat3 tbn = mat3(t, b, geometryNormal);
+    vec3 n = texture(u_clearcoatNormalTexture, normalTexCoords).rgb;
+    vec3 textureNormal = normalize(tbn * (2.0 * n - 1.0));
 
     return textureNormal;
 }
@@ -74,7 +162,6 @@ vec3 computeNormal(ProcessedAttributes attributes)
 vec4 getBaseColorFromTexture()
 {
     vec2 baseColorTexCoords = TEXCOORD_BASE_COLOR;
-
     #ifdef HAS_BASE_COLOR_TEXTURE_TRANSFORM
         baseColorTexCoords = computeTextureTransform(baseColorTexCoords, u_baseColorTextureTransform);
     #endif
@@ -154,17 +241,17 @@ void setSpecularGlossiness(inout czm_modelMaterial material)
     #else
         vec4 diffuse = vec4(1.0);
     #endif
-    czm_pbrParameters parameters = czm_pbrSpecularGlossinessMaterial(
-        diffuse.rgb,
-        specular,
-        glossiness
-    );
-    material.diffuse = parameters.diffuseColor;
+
+    material.diffuse = diffuse.rgb * (1.0 - czm_maximumComponent(specular));
     // the specular glossiness extension's alpha overrides anything set
     // by the base material.
     material.alpha = diffuse.a;
-    material.specular = parameters.f0;
-    material.roughness = parameters.roughness;
+
+    material.specular = specular;
+
+    // glossiness is the opposite of roughness, but easier for artists to use.
+    float roughness = 1.0 - glossiness;
+    material.roughness = roughness * roughness;
 }
 #elif defined(LIGHTING_PBR)
 float setMetallicRoughness(inout czm_modelMaterial material)
@@ -179,11 +266,11 @@ float setMetallicRoughness(inout czm_modelMaterial material)
         float metalness = clamp(metallicRoughness.b, 0.0, 1.0);
         float roughness = clamp(metallicRoughness.g, 0.04, 1.0);
         #ifdef HAS_METALLIC_FACTOR
-            metalness *= u_metallicFactor;
+            metalness = clamp(metalness * u_metallicFactor, 0.0, 1.0);
         #endif
 
         #ifdef HAS_ROUGHNESS_FACTOR
-            roughness *= u_roughnessFactor;
+            roughness = clamp(roughness * u_roughnessFactor, 0.0, 1.0);
         #endif
     #else
         #ifdef HAS_METALLIC_FACTOR
@@ -198,18 +285,23 @@ float setMetallicRoughness(inout czm_modelMaterial material)
             float roughness = 1.0;
         #endif
     #endif
-    czm_pbrParameters parameters = czm_pbrMetallicRoughnessMaterial(
-        material.diffuse,
-        metalness,
-        roughness
-    );
-    material.diffuse = parameters.diffuseColor;
-    material.specular = parameters.f0;
-    material.roughness = parameters.roughness;
+
+    // dielectrics use f0 = 0.04, metals use albedo as f0
+    const vec3 REFLECTANCE_DIELECTRIC = vec3(0.04);
+    vec3 f0 = mix(REFLECTANCE_DIELECTRIC, material.diffuse, metalness);
+
+    material.specular = f0;
+
+    // diffuse only applies to dielectrics.
+    material.diffuse = material.diffuse * (1.0 - f0) * (1.0 - metalness);
+
+    // roughness is authored as perceptual roughness
+    // square it to get material roughness
+    material.roughness = roughness * roughness;
 
     return metalness;
 }
-#if defined(USE_SPECULAR)
+#ifdef USE_SPECULAR
 void setSpecular(inout czm_modelMaterial material, in float metalness)
 {
     #ifdef HAS_SPECULAR_TEXTURE
@@ -234,7 +326,8 @@ void setSpecular(inout czm_modelMaterial material, in float metalness)
         #ifdef HAS_SPECULAR_COLOR_TEXTURE_TRANSFORM
             specularColorTexCoords = computeTextureTransform(specularColorTexCoords, u_specularColorTextureTransform);
         #endif
-        vec3 specularColorFactor = texture(u_specularColorTexture, specularColorTexCoords).rgb;
+        vec3 specularColorSample = texture(u_specularColorTexture, specularColorTexCoords).rgb;
+        vec3 specularColorFactor = czm_srgbToLinear(specularColorSample);
         #ifdef HAS_SPECULAR_COLOR_FACTOR
             specularColorFactor *= u_specularColorFactor;
         #endif
@@ -251,11 +344,90 @@ void setSpecular(inout czm_modelMaterial material, in float metalness)
     material.specular = mix(dielectricSpecularF0, material.diffuse, metalness);
 }
 #endif
+#ifdef USE_ANISOTROPY
+void setAnisotropy(inout czm_modelMaterial material, in NormalInfo normalInfo)
+{
+    mat2 rotation = mat2(u_anisotropy.xy, -u_anisotropy.y, u_anisotropy.x);
+    float anisotropyStrength = u_anisotropy.z;
+
+    vec2 direction = vec2(1.0, 0.0);
+    #ifdef HAS_ANISOTROPY_TEXTURE
+        vec2 anisotropyTexCoords = TEXCOORD_ANISOTROPY;
+        #ifdef HAS_ANISOTROPY_TEXTURE_TRANSFORM
+            anisotropyTexCoords = computeTextureTransform(anisotropyTexCoords, u_anisotropyTextureTransform);
+        #endif
+        vec3 anisotropySample = texture(u_anisotropyTexture, anisotropyTexCoords).rgb;
+        direction = anisotropySample.rg * 2.0 - vec2(1.0);
+        anisotropyStrength *= anisotropySample.b;
+    #endif
+
+    direction = rotation * direction;
+    mat3 tbn = mat3(normalInfo.tangent, normalInfo.bitangent, normalInfo.normal);
+    vec3 anisotropicT = tbn * normalize(vec3(direction, 0.0));
+    vec3 anisotropicB = cross(normalInfo.geometryNormal, anisotropicT);
+
+    material.anisotropicT = anisotropicT;
+    material.anisotropicB = anisotropicB;
+    material.anisotropyStrength = anisotropyStrength;
+}
+#endif
+#ifdef USE_CLEARCOAT
+void setClearcoat(inout czm_modelMaterial material, in ProcessedAttributes attributes)
+{
+    #ifdef HAS_CLEARCOAT_TEXTURE
+        vec2 clearcoatTexCoords = TEXCOORD_CLEARCOAT;
+        #ifdef HAS_CLEARCOAT_TEXTURE_TRANSFORM
+            clearcoatTexCoords = computeTextureTransform(clearcoatTexCoords, u_clearcoatTextureTransform);
+        #endif
+        float clearcoatFactor = texture(u_clearcoatTexture, clearcoatTexCoords).r;
+        #ifdef HAS_CLEARCOAT_FACTOR
+            clearcoatFactor *= u_clearcoatFactor;
+        #endif
+    #else
+        #ifdef HAS_CLEARCOAT_FACTOR
+            float clearcoatFactor = u_clearcoatFactor;
+        #else
+            // PERFORMANCE_IDEA: this case should turn the whole extension off
+            float clearcoatFactor = 0.0;
+        #endif
+    #endif
+
+    #ifdef HAS_CLEARCOAT_ROUGHNESS_TEXTURE
+        vec2 clearcoatRoughnessTexCoords = TEXCOORD_CLEARCOAT_ROUGHNESS;
+        #ifdef HAS_CLEARCOAT_ROUGHNESS_TEXTURE_TRANSFORM
+            clearcoatRoughnessTexCoords = computeTextureTransform(clearcoatRoughnessTexCoords, u_clearcoatRoughnessTextureTransform);
+        #endif
+        float clearcoatRoughness = texture(u_clearcoatRoughnessTexture, clearcoatRoughnessTexCoords).g;
+        #ifdef HAS_CLEARCOAT_ROUGHNESS_FACTOR
+            clearcoatRoughness *= u_clearcoatRoughnessFactor;
+        #endif
+    #else
+        #ifdef HAS_CLEARCOAT_ROUGHNESS_FACTOR
+            float clearcoatRoughness = u_clearcoatRoughnessFactor;
+        #else
+            float clearcoatRoughness = 0.0;
+        #endif
+    #endif
+
+    material.clearcoatFactor = clearcoatFactor;
+    // roughness is authored as perceptual roughness
+    // square it to get material roughness
+    material.clearcoatRoughness = clearcoatRoughness * clearcoatRoughness;
+    #ifdef HAS_CLEARCOAT_NORMAL_TEXTURE
+        material.clearcoatNormal = getClearcoatNormalFromTexture(attributes, attributes.normalEC);
+    #else
+        material.clearcoatNormal = attributes.normalEC;
+    #endif
+}
+#endif
 #endif
 
 void materialStage(inout czm_modelMaterial material, ProcessedAttributes attributes, SelectedFeature feature)
 {
-    #ifdef HAS_NORMALS
+    #ifdef USE_ANISOTROPY
+        NormalInfo normalInfo = getNormalInfo(attributes);
+        material.normalEC = normalInfo.normal;
+    #elif defined(HAS_NORMALS)
         material.normalEC = computeNormal(attributes);
     #endif
 
@@ -303,8 +475,14 @@ void materialStage(inout czm_modelMaterial material, ProcessedAttributes attribu
         setSpecularGlossiness(material);
     #elif defined(LIGHTING_PBR)
         float metalness = setMetallicRoughness(material);
-        #if defined(USE_SPECULAR)
+        #ifdef USE_SPECULAR
             setSpecular(material, metalness);
+        #endif
+        #ifdef USE_ANISOTROPY
+            setAnisotropy(material, normalInfo);
+        #endif
+        #ifdef USE_CLEARCOAT
+            setClearcoat(material, attributes);
         #endif
     #endif
 }

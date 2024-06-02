@@ -124,6 +124,10 @@ describe(
       "./Data/Models/glTF-2.0/BoxWeb3dQuantizedAttributes/glTF/BoxWeb3dQuantizedAttributes.gltf";
     const specularTestData =
       "./Data/Models/glTF-2.0/BoxSpecular/glTF/BoxSpecular.gltf";
+    const anisotropyTestData =
+      "./Data/Models/glTF-2.0/BoxAnisotropy/glTF/BoxAnisotropy.gltf";
+    const clearcoatTestData =
+      "./Data/Models/glTF-2.0/BoxClearcoat/glTF/BoxClearcoat.gltf";
 
     let scene;
     const gltfLoaders = [];
@@ -4151,6 +4155,40 @@ describe(
         Cartesian3.fromElements(50, 0, 0)
       );
       expect(material.specular.specularTexture.texture.width).toBe(256);
+    });
+
+    it("loads model with KHR_materials_anisotropy extension", async function () {
+      const gltfLoader = await loadGltf(anisotropyTestData);
+
+      const { material } = gltfLoader.components.nodes[1].primitives[0];
+      const {
+        anisotropyStrength,
+        anisotropyRotation,
+        anisotropyTexture,
+      } = material.anisotropy;
+
+      expect(anisotropyStrength).toBe(0.5);
+      expect(anisotropyRotation).toBe(0.349065850398866);
+      expect(anisotropyTexture.texture.width).toBe(256);
+    });
+
+    it("loads model with KHR_materials_clearcoat extension", async function () {
+      const gltfLoader = await loadGltf(clearcoatTestData);
+
+      const { material } = gltfLoader.components.nodes[1].primitives[0];
+      const {
+        clearcoatFactor,
+        clearcoatTexture,
+        clearcoatRoughnessFactor,
+        clearcoatRoughnessTexture,
+        clearcoatNormalTexture,
+      } = material.clearcoat;
+
+      expect(clearcoatFactor).toBe(0.5);
+      expect(clearcoatTexture.texture.width).toBe(256);
+      expect(clearcoatRoughnessFactor).toBe(0.2);
+      expect(clearcoatRoughnessTexture.texture.width).toBe(256);
+      expect(clearcoatNormalTexture.texture.width).toBe(256);
     });
 
     it("parses copyright field", function () {

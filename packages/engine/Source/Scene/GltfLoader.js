@@ -54,6 +54,8 @@ const {
   MetallicRoughness,
   SpecularGlossiness,
   Specular,
+  Anisotropy,
+  Clearcoat,
   Material,
 } = ModelComponents;
 
@@ -1565,6 +1567,64 @@ function loadSpecular(loader, specularInfo, frameState) {
   return specular;
 }
 
+function loadAnisotropy(loader, anisotropyInfo, frameState) {
+  const {
+    anisotropyStrength = Anisotropy.DEFAULT_ANISOTROPY_STRENGTH,
+    anisotropyRotation = Anisotropy.DEFAULT_ANISOTROPY_ROTATION,
+    anisotropyTexture,
+  } = anisotropyInfo;
+
+  const anisotropy = new Anisotropy();
+  if (defined(anisotropyTexture)) {
+    anisotropy.anisotropyTexture = loadTexture(
+      loader,
+      anisotropyTexture,
+      frameState
+    );
+  }
+  anisotropy.anisotropyStrength = anisotropyStrength;
+  anisotropy.anisotropyRotation = anisotropyRotation;
+
+  return anisotropy;
+}
+
+function loadClearcoat(loader, clearcoatInfo, frameState) {
+  const {
+    clearcoatFactor = Clearcoat.DEFAULT_CLEARCOAT_FACTOR,
+    clearcoatTexture,
+    clearcoatRoughnessFactor = Clearcoat.DEFAULT_CLEARCOAT_ROUGHNESS_FACTOR,
+    clearcoatRoughnessTexture,
+    clearcoatNormalTexture,
+  } = clearcoatInfo;
+
+  const clearcoat = new Clearcoat();
+  if (defined(clearcoatTexture)) {
+    clearcoat.clearcoatTexture = loadTexture(
+      loader,
+      clearcoatTexture,
+      frameState
+    );
+  }
+  if (defined(clearcoatRoughnessTexture)) {
+    clearcoat.clearcoatRoughnessTexture = loadTexture(
+      loader,
+      clearcoatRoughnessTexture,
+      frameState
+    );
+  }
+  if (defined(clearcoatNormalTexture)) {
+    clearcoat.clearcoatNormalTexture = loadTexture(
+      loader,
+      clearcoatNormalTexture,
+      frameState
+    );
+  }
+  clearcoat.clearcoatFactor = clearcoatFactor;
+  clearcoat.clearcoatRoughnessFactor = clearcoatRoughnessFactor;
+
+  return clearcoat;
+}
+
 /**
  * Load textures and parse factors and flags for a glTF material
  *
@@ -1583,6 +1643,8 @@ function loadMaterial(loader, gltfMaterial, frameState) {
   );
   const pbrSpecularGlossiness = extensions.KHR_materials_pbrSpecularGlossiness;
   const pbrSpecular = extensions.KHR_materials_specular;
+  const pbrAnisotropy = extensions.KHR_materials_anisotropy;
+  const pbrClearcoat = extensions.KHR_materials_clearcoat;
   const pbrMetallicRoughness = gltfMaterial.pbrMetallicRoughness;
 
   material.unlit = defined(extensions.KHR_materials_unlit);
@@ -1601,8 +1663,14 @@ function loadMaterial(loader, gltfMaterial, frameState) {
         frameState
       );
     }
-    if (defined(pbrSpecular)) {
+    if (defined(pbrSpecular) && !material.unlit) {
       material.specular = loadSpecular(loader, pbrSpecular, frameState);
+    }
+    if (defined(pbrAnisotropy) && !material.unlit) {
+      material.anisotropy = loadAnisotropy(loader, pbrAnisotropy, frameState);
+    }
+    if (defined(pbrClearcoat) && !material.unlit) {
+      material.clearcoat = loadClearcoat(loader, pbrClearcoat, frameState);
     }
   }
 

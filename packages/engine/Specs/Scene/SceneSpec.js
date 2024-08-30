@@ -128,6 +128,10 @@ describe(
 
     describe("constructor", () => {
       it("has expected defaults", function () {
+        const scene = createScene({
+          canvas: createCanvas(5, 5),
+        });
+
         expect(scene.canvas).toBeInstanceOf(HTMLCanvasElement);
         expect(scene.primitives).toBeInstanceOf(PrimitiveCollection);
         expect(scene.camera).toBeInstanceOf(Camera);
@@ -137,6 +141,7 @@ describe(
         expect(scene.mapProjection).toBeInstanceOf(GeographicProjection);
         expect(scene.frameState).toBeInstanceOf(FrameState);
         expect(scene.tweens).toBeInstanceOf(TweenCollection);
+        expect(scene.msaaSamples).toEqual(4);
 
         const contextAttributes = scene.context._gl.getContextAttributes();
         // Do not check depth and antialias since they are requests not requirements
@@ -145,6 +150,7 @@ describe(
         expect(contextAttributes.premultipliedAlpha).toEqual(true);
         expect(contextAttributes.preserveDrawingBuffer).toEqual(false);
         expect(scene._depthPlane._ellipsoidOffset).toEqual(0);
+        scene.destroyForSpecs();
       });
 
       it("respects default log depth buffer override", () => {

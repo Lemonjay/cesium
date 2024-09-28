@@ -16,6 +16,10 @@
 - Reverts Firefox OIT temporary fix [#4815] and Firefox test failure fix [#5047]
 - Fixed noise in ambient occlusion post process. [#12201](https://github.com/CesiumGS/cesium/pull/12201)
 
+##### Deprecated :hourglass_flowing_sand:
+
+- `Rectangle.validate` has been deprecated. It will be removed in 1.124.
+
 ### 1.121.1 - 2024-09-04
 
 This is an npm-only release to extra source maps included in 1.121
@@ -2148,7 +2152,7 @@ _This is an npm-only release to fix a publishing issue_.
   - This is to make clipping planes' coordinates always relative to the object they're attached to. So if you were positioning the clipping planes as in the example below, this is no longer necessary:
   ```javascript
   clippingPlanes.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(
-    tileset.boundingSphere.center
+    tileset.boundingSphere.center,
   );
   ```
   - This also fixes several issues with clipping planes not using the correct transform for tilesets with children.
